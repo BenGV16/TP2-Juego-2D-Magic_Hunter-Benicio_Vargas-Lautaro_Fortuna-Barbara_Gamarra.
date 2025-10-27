@@ -70,7 +70,7 @@ public class Game1 : Game
         }
         else if (_currentState == GameState.Playing)
         {
-            _gamePlay.Update( gameTime,GraphicsDevice.Viewport);
+            _gamePlay.Update( gameTime,GraphicsDevice.Viewport, Mouse.GetState());
         }
         _previousKeyboardState = kb;
         base.Update(gameTime);
