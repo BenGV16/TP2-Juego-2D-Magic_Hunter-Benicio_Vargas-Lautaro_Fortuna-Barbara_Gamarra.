@@ -59,7 +59,9 @@ namespace Magic_Hunter.src
                 }
             }
         }
-        public void Draw(SpriteBatch spriteBatch, Vector2 position, Color color, float depth, float width, float height)
+        
+        // MODIFICADO: Se agregó el parámetro opcional 'effects'
+        public void Draw(SpriteBatch spriteBatch, Vector2 position, Color color, float depth, float width, float height, SpriteEffects effects = SpriteEffects.None)
         {
             Rectangle destinationRect = new Rectangle(
                 (int)(position.X - width / 2f),
@@ -75,7 +77,7 @@ namespace Magic_Hunter.src
                 color,
                 0f,
                 Vector2.Zero,
-                SpriteEffects.None,
+                effects, // Se usa el efecto pasado
                 depth
             );
         }

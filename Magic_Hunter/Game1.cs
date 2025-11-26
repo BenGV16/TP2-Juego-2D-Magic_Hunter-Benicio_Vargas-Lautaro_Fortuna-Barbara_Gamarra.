@@ -29,7 +29,9 @@ public class Game1 : Game
     {
         _graphics = new GraphicsDeviceManager(this);
         Content.RootDirectory = "Content";
-        IsMouseVisible = true;
+        
+        // CAMBIO: Ocultamos el mouse del sistema para usar la mirilla del escudo
+        IsMouseVisible = false; 
 
         _graphics.SynchronizeWithVerticalRetrace = true;
         IsFixedTimeStep = true;
@@ -50,7 +52,9 @@ public class Game1 : Game
         _spriteBatch = new SpriteBatch(GraphicsDevice);
         Texture2D coliseumTexture = Content.Load<Texture2D>("pixilart-sprite(Escenario)");
         _coliseumSheet = new SpriteSheetManager(coliseumTexture, 640, 360);
-        _pixelFont = Content.Load<SpriteFont>("PixelFont");
+        
+        try { _pixelFont = Content.Load<SpriteFont>("PixelFont"); } catch { }
+        
         _menuManager.Initialize(GraphicsDevice.Viewport, GraphicsDevice);
         _menuManager.LoadContent(_pixelFont);
         _gamePlay.Initialize(GraphicsDevice, GraphicsDevice.Viewport, Content);
@@ -65,21 +69,38 @@ public class Game1 : Game
             if (_currentState == GameState.Menu)
                 Exit();
             else
+            {
                 _currentState = GameState.Menu;
+                _gamePlay.Reset(); 
+                IsMouseVisible = true; // Mostrar mouse en menú si se desea
+            }
             return;
         }
 
         if (_currentState == GameState.Menu)
         {
+            IsMouseVisible = true; // Asegurar mouse visible en menú
             var mouseState = Mouse.GetState();
             int selected = _menuManager.HandleInput(mouseState);
-            if (selected == 0) _currentState = GameState.Playing;
+            if (selected == 0) 
+            {
+                _currentState = GameState.Playing;
+                _gamePlay.Reset();
+                IsMouseVisible = false; // Ocultar mouse al jugar
+            }
             else if (selected == 1) System.Diagnostics.Debug.WriteLine("Options selected");
             else if (selected == 2) Exit();
         }
         else if (_currentState == GameState.Playing)
         {
             _gamePlay.Update(gameTime, GraphicsDevice.Viewport, Mouse.GetState());
+            
+            if (_gamePlay.IsGameOver)
+            {
+                _currentState = GameState.Menu;
+                _gamePlay.Reset();
+                IsMouseVisible = true;
+            }
         }
 
         _previousKeyboardState = kb;
