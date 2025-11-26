@@ -60,7 +60,6 @@ namespace Magic_Hunter.src
             }
         }
         
-        // MODIFICADO: Se agregó el parámetro opcional 'effects'
         public void Draw(SpriteBatch spriteBatch, Vector2 position, Color color, float depth, float width, float height, SpriteEffects effects = SpriteEffects.None)
         {
             Rectangle destinationRect = new Rectangle(
@@ -77,9 +76,10 @@ namespace Magic_Hunter.src
                 color,
                 0f,
                 Vector2.Zero,
-                effects, // Se usa el efecto pasado
+                effects, 
                 depth
             );
         }
+        // Se eliminó SetFrameTime aquí
     }
 }

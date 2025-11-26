@@ -16,7 +16,6 @@ public abstract class Enemies
     protected double _timer = 0;
     protected double _hitTimer = 0; 
 
-    // Nuevo: Variable para controlar el espejo
     protected SpriteEffects _spriteEffect = SpriteEffects.None;
 
     public int Health { get; protected set; }
@@ -73,7 +72,6 @@ public abstract class Enemies
 
         if (_animator != null)
         {
-            // MODIFICADO: Pasamos _spriteEffect al animador
             _animator.Draw(spriteBatch, _position, drawColor, Depth, _width, _height, _spriteEffect);
         }
         else
@@ -83,20 +81,28 @@ public abstract class Enemies
     }
 }
 
+// --- MODIFICADO: HADA 1 (Crece y brilla) ---
 public class Hada : Enemies
 {
     private Vector2 _target;
-    private AnimationManager _moveAnim;
-    private AnimationManager _idleAnim;
-    private bool _isMoving = false;
+    // Eliminamos _idleAnim y _isMoving, ya no se detendrá.
+
+    // Variables para el efecto de brillo
+    private float _baseWidth;
+    private float _attackWidth = 400f; // Tamaño al que ataca
+
+    public bool IsReadyToAttack => _width >= _attackWidth; 
 
     public Hada(Vector2 startPos, Random random, float depth, Color color, Texture2D texture, int frameCount, int frameWidth, int frameHeight, float frameTime, float speedMultiplier)
         : base(startPos, random, depth, color, texture, 1, 5, speedMultiplier)
     {
+        // Velocidad aumentada considerablemente (2.5 veces la base)
+        _speed *= 2.5f;
+        _baseWidth = _width; // Guardamos el tamaño inicial (200f)
+
         _target = new Vector2(startPos.X, startPos.Y + 100); 
-        _moveAnim = new AnimationManager(texture, frameCount, frameWidth, frameHeight, frameTime);
-        _idleAnim = new AnimationManager(texture, 1, frameWidth, frameHeight, 0f);
-        _animator = _idleAnim;
+        // Solo usa la animación de movimiento
+        _animator = new AnimationManager(texture, frameCount, frameWidth, frameHeight, frameTime);
         _animator.Play(true);
     }
 
@@ -104,39 +110,49 @@ public class Hada : Enemies
     {
         base.Update(gameTime, viewport);
 
-        _timer += gameTime.ElapsedGameTime.TotalSeconds;
-        if (_timer > 2.0)
+        // Crecimiento constante
+        float growthRate = 35f * (float)gameTime.ElapsedGameTime.TotalSeconds;
+        _width += growthRate;
+        _height += growthRate;
+
+        // Movimiento continuo: Si está cerca del objetivo, elige otro inmediatamente.
+        Vector2 dir = _target - _position;
+        if (dir.Length() < 10f)
         {
+            // Elegir nuevo objetivo aleatorio en pantalla
             _target = new Vector2(
-                _random.Next(0, viewport.Width),
-                _random.Next(0, (int)(viewport.Height * 0.6))
+                _random.Next(50, viewport.Width - 50),
+                _random.Next(50, (int)(viewport.Height * 0.7))
             );
-            _timer = 0;
+            dir = _target - _position; // Recalcular dirección
         }
 
-        Vector2 dir = _target - _position;
-        if (dir.Length() > 1f)
+        if (dir.Length() > 0)
         {
-            if (!_isMoving)
-            {
-                _isMoving = true;
-                _animator = _moveAnim;
-                _animator.Play(true);
-            }
             dir.Normalize();
             _position += dir * _speed * (float)gameTime.ElapsedGameTime.TotalSeconds;
         }
-        else
-        {
-            if (_isMoving)
-            {
-                _isMoving = false;
-                _animator = _idleAnim;
-                _animator.Play(true);
-            }
-        }
+        
         _animator.Update(gameTime);
         UpdateRect();
+    }
+
+    // SOBRESCRIBIMOS DRAW PARA EL EFECTO DE BRILLO
+    public override void Draw(SpriteBatch spriteBatch, Texture2D pixel)
+    {
+        // 1. Calcular el porcentaje de "carga/tamaño" (de 0.0 a 1.0)
+        float ratio = (_width - _baseWidth) / (_attackWidth - _baseWidth);
+        ratio = MathHelper.Clamp(ratio, 0f, 1f);
+
+        // 2. Calcular el color de brillo.
+        // Interpolamos entre Blanco normal y un Amarillo muy brillante intenso.
+        // Cuanto más grande, más amarillo/blanco intenso se verá el sprite.
+        Color brightnessColor = Color.Lerp(Color.White, new Color(255, 255, 180), ratio);
+
+        // 3. Si está golpeada (hitTimer > 0), el rojo tiene prioridad. Si no, usa el brillo.
+        Color finalColor = (_hitTimer > 0) ? Color.Red : brightnessColor;
+
+        _animator.Draw(spriteBatch, _position, finalColor, Depth, _width, _height, _spriteEffect);
     }
 }
 
@@ -237,8 +253,6 @@ public class Gusano : Enemies
             _animator.Play(isLooping: true);
         }
 
-        // MODIFICADO: Lógica de espejo
-        // Si está en la mitad izquierda (< ancho/2), invertimos horizontalmente
         if (_position.X < viewport.Width / 2)
         {
             _spriteEffect = SpriteEffects.FlipHorizontally;
@@ -248,6 +262,57 @@ public class Gusano : Enemies
             _spriteEffect = SpriteEffects.None;
         }
 
+        UpdateRect();
+    }
+}
+
+// --- MODIFICADO: HADA 2 (Trampa rapida) ---
+public class Hada2 : Enemies
+{
+    private Vector2 _target;
+    private bool _leaving = false;
+
+    public Hada2(Vector2 startPos, Random random, float depth, Color color, Texture2D texture, int frameCount, int frameWidth, int frameHeight, float frameTime, float speedMultiplier)
+        : base(startPos, random, depth, color, texture, 1, 0, speedMultiplier) 
+    {
+        // Velocidad MUY aumentada (3 veces la base) para que sea difícil de acertar
+        _speed *= 3.0f; 
+
+        _target = new Vector2(startPos.X, startPos.Y + 150); 
+        _animator = new AnimationManager(texture, frameCount, frameWidth, frameHeight, frameTime);
+        _animator.Play(true);
+    }
+
+    public override void Update(GameTime gameTime, Viewport viewport)
+    {
+        base.Update(gameTime, viewport);
+        _animator.Update(gameTime);
+
+        _timer += gameTime.ElapsedGameTime.TotalSeconds;
+
+        // Se va a los 8 segundos
+        if (!_leaving && _timer > 8.0)
+        {
+            _leaving = true;
+            _target = new Vector2(_position.X, -200); 
+        }
+        // Movimiento continuo: Si llega al destino y NO se está yendo, elige otro inmediatamente.
+        else if (!_leaving && Vector2.Distance(_position, _target) < 10f)
+        {
+             _target = new Vector2(
+                _random.Next(50, viewport.Width - 50),
+                _random.Next(50, (int)(viewport.Height * 0.7))
+             );
+        }
+
+        Vector2 dir = _target - _position;
+        if (dir.Length() > 0)
+        {
+            dir.Normalize();
+            _position += dir * _speed * (float)gameTime.ElapsedGameTime.TotalSeconds;
+        }
+        
+        // No crece
         UpdateRect();
     }
 }

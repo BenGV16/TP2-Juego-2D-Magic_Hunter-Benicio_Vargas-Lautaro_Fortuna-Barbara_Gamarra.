@@ -30,6 +30,9 @@ public class GamePlay
     private bool _showingWaveMessage = false;
     private string _waveMessageText = "";
     
+    // Flashbang
+    private float _flashbangAlpha = 0f;
+
     // Jugador y Vida
     private int _playerMaxHealth = 100;
     private int _playerHealth = 100;
@@ -37,22 +40,23 @@ public class GamePlay
     private PlayerWand _playerWand;
     private float _wandXPosition; 
 
-    // --- SISTEMA DE ESCUDO ---
+    // Escudo
     private Texture2D _shieldTexture;
     private Rectangle[] _shieldSourceRects; 
-    
-    // El frame siempre será 0 visualmente, pero mantenemos lógica de durabilidad
+    private int _currentShieldFrame = 0; 
     private float _shieldDurability = 100f;
     private float _maxShieldDurability = 100f;
     private bool _isShieldBroken = false;
-    
-    // --- SISTEMA DE PROYECTILES ---
+    private double _blockFeedbackTimer = 0; 
+
+    // Proyectiles
     private Texture2D _projectileTexture;
     private List<Projectile> _projectiles = new();
     
     // Recursos
     private ContentManager _content;
     private Texture2D _hadaTexture;
+    private Texture2D _hada2Texture; 
     private Texture2D _sapoTexture;
     private Texture2D _gusanoSaliendoTexture;
     private Texture2D _gusanoNormalTexture;
@@ -82,6 +86,7 @@ public class GamePlay
         try
         {
             _hadaTexture = _content.Load<Texture2D>("pixilart-sprite(Hada1)");
+            _hada2Texture = _content.Load<Texture2D>("pixilart-sprite(Hada2)"); 
             _sapoTexture = _content.Load<Texture2D>("pixilart-sprite (Sapito)");
             _gusanoSaliendoTexture = _content.Load<Texture2D>("pixilart-sprite (Gusano-Saliendo)");
             _gusanoNormalTexture = _content.Load<Texture2D>("pixil-sprite(Gusano)");
@@ -92,9 +97,9 @@ public class GamePlay
             int sWidth = _shieldTexture.Width / 3;
             int sHeight = _shieldTexture.Height;
             _shieldSourceRects = new Rectangle[3];
-            _shieldSourceRects[0] = new Rectangle(0, 0, sWidth, sHeight);       // Sprite 1
-            _shieldSourceRects[1] = new Rectangle(sWidth, 0, sWidth, sHeight);  // Sprite 2
-            _shieldSourceRects[2] = new Rectangle(sWidth * 2, 0, sWidth, sHeight); // Sprite 3
+            _shieldSourceRects[0] = new Rectangle(0, 0, sWidth, sHeight);       
+            _shieldSourceRects[1] = new Rectangle(sWidth, 0, sWidth, sHeight);  
+            _shieldSourceRects[2] = new Rectangle(sWidth * 2, 0, sWidth, sHeight); 
 
             try { _font = _content.Load<SpriteFont>("PixelFont"); } catch { } 
         }
@@ -119,6 +124,7 @@ public class GamePlay
         _shieldDurability = _maxShieldDurability;
         _isShieldBroken = false;
         _difficultyMultiplier = 1.0f;
+        _flashbangAlpha = 0f;
         IsGameOver = false;
         StartNextWave();
     }
@@ -131,8 +137,7 @@ public class GamePlay
         
         _showingWaveMessage = true;
         _waveMessageTimer = 3.0; 
-        // CAMBIO: Números normales en lugar de romanos
-        _waveMessageText = "OLEADA " + _waveNumber; 
+        _waveMessageText = "OLEADA " + _waveNumber;
 
         if (_waveNumber > 1)
         {
@@ -153,7 +158,7 @@ public class GamePlay
 
         for (int i = 0; i < totalEnemies; i++)
         {
-            int type = _random.Next(4); 
+            int type = _random.Next(5); 
             if (type == 2) 
             {
                 if (currentSapos < maxSapos) { currentSapos++; waveComposition.Add(type); }
@@ -174,25 +179,37 @@ public class GamePlay
         float delta = (float)gameTime.ElapsedGameTime.TotalSeconds;
         Point mousePos = new Point(mouseState.X, mouseState.Y);
 
+        // Actualizar Flashbang
+        if (_flashbangAlpha > 0)
+        {
+            _flashbangAlpha -= 0.5f * delta; 
+            if (_flashbangAlpha < 0) _flashbangAlpha = 0;
+        }
+
         // 1. Lógica del Escudo
         bool isShielding = false;
+        _currentShieldFrame = 0; 
 
-        // Recuperación pasiva (lenta)
         if (_shieldDurability < _maxShieldDurability && !isShielding && !_isShieldBroken)
             _shieldDurability += 2f * delta;
 
-        // Recuperación de rotura (lenta)
         if (_isShieldBroken)
         {
-            _shieldDurability += 4f * delta;
+            _shieldDurability += 4f * delta; 
             if (_shieldDurability >= _maxShieldDurability * 0.5f) 
                 _isShieldBroken = false;
         }
 
-        // INPUT DEL ESCUDO: CLIC DERECHO (Para permitir uso simultáneo con Varita)
-        if (mouseState.RightButton == ButtonState.Pressed && !_isShieldBroken)
+        if (mouseState.RightButton == ButtonState.Pressed && !_isShieldBroken && mouseState.LeftButton == ButtonState.Released)
         {
             isShielding = true;
+            _currentShieldFrame = 1; 
+        }
+
+        if (_blockFeedbackTimer > 0)
+        {
+            _blockFeedbackTimer -= delta;
+            _currentShieldFrame = 2; 
         }
 
         // 2. Mensajes y Oleadas
@@ -241,8 +258,23 @@ public class GamePlay
             var entity = _entities[i];
             entity.Update(gameTime, viewport);
 
-            // CAMBIO: Probabilidad de disparo reducida (de 0.01 a 0.002) para que disparen más lento
-            if (_random.NextDouble() < 0.002 * _difficultyMultiplier) 
+            // Limpieza de Hada2 que se va
+            if (entity is Hada2 && entity.Rect.Bottom < 0)
+            {
+                _entities.RemoveAt(i);
+                continue;
+            }
+
+            // Ataque del Hada 1 por proximidad (cuando está muy grande)
+            if (entity is Hada hada && hada.IsReadyToAttack)
+            {
+                _playerHealth -= hada.Damage;
+                _entities.RemoveAt(i); 
+                continue;
+            }
+
+            // Disparos enemigos (Hada 1 y 2 no disparan)
+            if (!(entity is Hada) && entity.Damage > 0 && _random.NextDouble() < 0.002 * _difficultyMultiplier) 
             {
                 SpawnProjectile(entity.Rect.Center.ToVector2(), viewport);
             }
@@ -258,9 +290,8 @@ public class GamePlay
             IsGameOver = true;
         }
 
-        // 6. Disparo: CLIC IZQUIERDO (Al presionar)
-        // Usamos Pressed + Previous Released para disparo semiautomático (un clic = un tiro)
-        if (mouseState.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released)
+        // 6. Disparo: CLIC DERECHO
+        if (mouseState.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released && mouseState.RightButton == ButtonState.Released)
         {
             _playerWand?.Attack();
 
@@ -269,6 +300,10 @@ public class GamePlay
             {
                 if (clicked.TakeDamage(1))
                 {
+                    if (clicked is Hada2)
+                    {
+                        _flashbangAlpha = 1.5f;
+                    }
                     _entities.Remove(clicked);
                 }
             }
@@ -325,11 +360,12 @@ public class GamePlay
                     if (shieldRect.Intersects(pRect))
                     {
                         blocked = true;
+                        _blockFeedbackTimer = 0.2; 
                         _shieldDurability -= p.Damage * 2; 
                         if (_shieldDurability <= 0)
                         {
                             _shieldDurability = 0;
-                            _isShieldBroken = true;
+                            _isShieldBroken = true; 
                         }
                     }
                 }
@@ -395,6 +431,16 @@ public class GamePlay
                         0.15f, _difficultyMultiplier);
                 }
                 break;
+            
+            case 4: 
+                if (_hada2Texture != null)
+                {
+                    float spawnX = _random.Next(100, viewport.Width - 100);
+                    startPos = new Vector2(spawnX, -50f); 
+                    int frameWidth = _hada2Texture.Width / 2;
+                    entity = new Hada2(startPos, _random, depth, Color.White, _hada2Texture, 2, frameWidth, _hada2Texture.Height, 0.3f, _difficultyMultiplier);
+                }
+                break;
         }
 
         if (entity != null) _entities.Add(entity);
@@ -416,24 +462,27 @@ public class GamePlay
 
         _playerWand?.Draw(spriteBatch);
 
-        // --- UI ---
+        if (_flashbangAlpha > 0)
+        {
+            spriteBatch.Draw(_pixel, 
+                new Rectangle(0, 0, spriteBatch.GraphicsDevice.Viewport.Width, spriteBatch.GraphicsDevice.Viewport.Height), 
+                Color.White * _flashbangAlpha);
+        }
+
         int margin = 20;
         int barW = 200;
         int barH = 20;
 
-        // 1. Barra de Vida (Violeta)
         spriteBatch.Draw(_pixel, new Rectangle(margin, margin, barW, barH), Color.DarkRed);
         float hpPct = (float)_playerHealth / _playerMaxHealth;
         spriteBatch.Draw(_pixel, new Rectangle(margin, margin, (int)(barW * hpPct), barH), Color.Purple);
 
-        // 2. Barra de Durabilidad
         int shieldY = margin + barH + 5;
         spriteBatch.Draw(_pixel, new Rectangle(margin, shieldY, barW, barH/2), Color.Gray);
         float shieldPct = _shieldDurability / _maxShieldDurability;
         Color shieldColor = _isShieldBroken ? Color.Red : Color.Cyan; 
         spriteBatch.Draw(_pixel, new Rectangle(margin, shieldY, (int)(barW * shieldPct), barH/2), shieldColor);
 
-        // 3. Mensajes
         if (_showingWaveMessage && _font != null)
         {
             Vector2 textSize = _font.MeasureString(_waveMessageText);
@@ -449,11 +498,10 @@ public class GamePlay
             spriteBatch.DrawString(_font, $"Oleada: {_waveNumber}", new Vector2(margin, shieldY + 20), Color.White);
         }
 
-        // 4. DIBUJAR MIRILLA / ESCUDO (Siempre Sprite 1)
         MouseState ms = Mouse.GetState();
         if (_shieldTexture != null)
         {
-            Rectangle source = _shieldSourceRects[0]; 
+            Rectangle source = _shieldSourceRects[_currentShieldFrame]; 
             Vector2 origin = new Vector2(source.Width / 2, source.Height / 2);
             spriteBatch.Draw(_shieldTexture, new Vector2(ms.X, ms.Y), source, Color.White, 0f, origin, 0.5f, SpriteEffects.None, 0f);
         }
